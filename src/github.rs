@@ -14,7 +14,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_RETRIES: usize = 3;
 const MAX_BACKOFF: Duration = Duration::from_secs(8);
-const MAX_RATE_LIMIT_WAIT: Duration = Duration::from_secs(60);
+const MAX_RATE_LIMIT_WAIT: Duration = Duration::from_secs(900);
 const MAX_ERROR_BODY_CHARS: usize = 500;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -42,6 +42,7 @@ pub fn fetch_org_repos(
         return Ok(Vec::new());
     }
 
+    let organization = normalize_organization(org)?;
     let token = resolve_token(include_private)?;
     let client = Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
@@ -51,7 +52,7 @@ pub fn fetch_org_repos(
 
     let per_page = max_repos.clamp(1, 100);
     let mut repositories = Vec::with_capacity(max_repos.min(100));
-    let mut next_url = Some(build_initial_url(org, include_private, per_page)?);
+    let mut next_url = Some(build_initial_url(organization, include_private, per_page)?);
     let mut request_index = 1usize;
 
     while let Some(url) = next_url.take() {
@@ -97,6 +98,15 @@ fn build_initial_url(org: &str, include_private: bool, per_page: usize) -> Resul
         .append_pair("page", "1");
 
     Ok(url)
+}
+
+fn normalize_organization(org: &str) -> Result<&str> {
+    let trimmed = org.trim();
+    if trimmed.is_empty() {
+        bail!("--org must not be empty or whitespace");
+    }
+
+    Ok(trimmed)
 }
 
 fn resolve_token(include_private: bool) -> Result<Option<String>> {
@@ -193,10 +203,17 @@ fn retry_delay_for_response(
         return None;
     }
 
+    if status == StatusCode::FORBIDDEN
+        && retry_after_delay(headers).is_none()
+        && rate_limit_reset_delay(headers).is_none()
+    {
+        return None;
+    }
+
     let is_retryable_status = status == StatusCode::TOO_MANY_REQUESTS
-        || status == StatusCode::FORBIDDEN
         || status == StatusCode::REQUEST_TIMEOUT
-        || status.is_server_error();
+        || status.is_server_error()
+        || status == StatusCode::FORBIDDEN;
 
     if !is_retryable_status {
         return None;
@@ -215,8 +232,14 @@ fn retry_delay_for_response(
 
 fn retry_after_delay(headers: &HeaderMap) -> Option<Duration> {
     let raw_value = headers.get(RETRY_AFTER)?.to_str().ok()?;
-    let seconds = raw_value.trim().parse::<u64>().ok()?;
-    Some(Duration::from_secs(seconds.max(1)))
+    if let Ok(seconds) = raw_value.trim().parse::<u64>() {
+        return Some(Duration::from_secs(seconds.max(1)));
+    }
+
+    let parsed = chrono::DateTime::parse_from_rfc2822(raw_value.trim()).ok()?;
+    let now = Utc::now();
+    let delta = (parsed.with_timezone(&Utc) - now).num_seconds().max(1) as u64;
+    Some(Duration::from_secs(delta))
 }
 
 fn rate_limit_reset_delay(headers: &HeaderMap) -> Option<Duration> {
@@ -307,6 +330,12 @@ mod tests {
     }
 
     #[test]
+    fn organization_normalization_rejects_blank_values() {
+        let result = normalize_organization("   ");
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn parse_next_link_extracts_next_url() {
         let header = Some(
             "<https://api.github.com/orgs/open330/repos?per_page=100&page=2>; rel=\"next\", <https://api.github.com/orgs/open330/repos?per_page=100&page=4>; rel=\"last\"",
@@ -333,6 +362,20 @@ mod tests {
     }
 
     #[test]
+    fn retry_delay_parses_http_date_retry_after() {
+        let future = (Utc::now() + chrono::TimeDelta::seconds(2)).to_rfc2822();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            RETRY_AFTER,
+            HeaderValue::from_str(&future).expect("header value should be valid"),
+        );
+
+        let delay = retry_delay_for_response(StatusCode::TOO_MANY_REQUESTS, &headers, 0)
+            .expect("retry delay should exist");
+        assert!(delay.as_secs() >= 1);
+    }
+
+    #[test]
     fn retry_delay_uses_rate_limit_reset_headers() {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -350,6 +393,13 @@ mod tests {
             .expect("retry delay should exist");
         assert!(delay.as_secs() >= 1);
         assert!(delay <= MAX_RATE_LIMIT_WAIT);
+    }
+
+    #[test]
+    fn forbidden_without_rate_limit_headers_is_not_retried() {
+        let headers = HeaderMap::new();
+        let delay = retry_delay_for_response(StatusCode::FORBIDDEN, &headers, 0);
+        assert!(delay.is_none());
     }
 
     #[test]

@@ -18,8 +18,18 @@ This plan consolidates action items from the latest parallel reviews (explore, l
 - [x] Surface additional report context in output and docs (private/archive/default-branch clarity).
 - [x] Update `README.md` to document private-scan requirements and stale-threshold behavior.
 
+## Follow-up Checklist (Exhaustive Search Pass)
+
+- [x] Parse `Retry-After` values in both delta-seconds and HTTP-date forms.
+- [x] Retry `403` responses only when rate-limit signals are present.
+- [x] Validate blank organization values in library fetch entrypoint.
+- [x] Add explicit health-sort tie-breaker tests for recency and name ordering.
+- [x] Escape `|` in markdown link text to prevent table-cell breakage.
+- [x] Clarify default-branch/private/archive output context in README features.
+
 ## Progress Log
 
 - [x] 2026-03-05: Consolidated review findings into a tracked remediation plan.
 - [x] 2026-03-05: Implemented API reliability hardening (version header, retry/backoff, Link pagination, safer error handling) and validation alignment between CLI/library.
 - [x] 2026-03-05: Completed scoring/output/docs hardening (archived stale policy, inclusive threshold semantics, richer output fields, markdown safety, and expanded tests).
+- [x] 2026-03-05: Closed follow-up gaps from exhaustive search (Retry-After HTTP-date parsing, strict 403 retry conditions, library org validation, tie-break tests, and README clarity).

@@ -509,6 +509,64 @@ mod tests {
     }
 
     #[test]
+    fn sort_health_applies_days_and_name_tiebreakers() {
+        let mut repositories = vec![
+            RepoReport {
+                name: "beta".to_string(),
+                description: None,
+                url: "https://example.com/beta".to_string(),
+                language: "Rust".to_string(),
+                default_branch: "main".to_string(),
+                days_since_push: 12,
+                stars: 0,
+                forks: 0,
+                open_issues: 0,
+                archived: false,
+                private: false,
+                health_score: 70,
+                status: HealthStatus::Watch,
+                notes: vec!["none".to_string()],
+            },
+            RepoReport {
+                name: "alpha".to_string(),
+                description: None,
+                url: "https://example.com/alpha".to_string(),
+                language: "Rust".to_string(),
+                default_branch: "main".to_string(),
+                days_since_push: 12,
+                stars: 0,
+                forks: 0,
+                open_issues: 0,
+                archived: false,
+                private: false,
+                health_score: 70,
+                status: HealthStatus::Watch,
+                notes: vec!["none".to_string()],
+            },
+            RepoReport {
+                name: "gamma".to_string(),
+                description: None,
+                url: "https://example.com/gamma".to_string(),
+                language: "Rust".to_string(),
+                default_branch: "main".to_string(),
+                days_since_push: 40,
+                stars: 0,
+                forks: 0,
+                open_issues: 0,
+                archived: false,
+                private: false,
+                health_score: 70,
+                status: HealthStatus::Watch,
+                notes: vec!["none".to_string()],
+            },
+        ];
+
+        sort_repositories(&mut repositories, SortMode::Health);
+        let order: Vec<String> = repositories.into_iter().map(|entry| entry.name).collect();
+        assert_eq!(order, vec!["gamma", "alpha", "beta"]);
+    }
+
+    #[test]
     fn sort_name_is_alphabetical() {
         let mut repositories = vec![
             RepoReport {

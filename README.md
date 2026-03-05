@@ -46,6 +46,8 @@ add output integrations, or tune risk heuristics for large organizations.
 
 **Multi-Format Output** -- Render reports as readable terminal tables, Markdown for issues/docs, or JSON for automation pipelines.
 
+**Richer Context Columns** -- Include default branch and fork count in tabular output, while `notes` flags key context such as archived/private repositories and metadata gaps.
+
 **Deterministic Sorting** -- Sort by health, update recency, or repository name depending on the workflow.
 
 **Safe Defaults** -- Defaults tuned for org-level triage: `--org open330`, `--max-repos 100`, `--stale-days 45` (inclusive stale boundary).

@@ -216,6 +216,7 @@ fn markdown_escape_link_text(value: &str) -> String {
             '\\' => escaped.push_str("\\\\"),
             '[' => escaped.push_str("\\["),
             ']' => escaped.push_str("\\]"),
+            '|' => escaped.push_str("\\|"),
             '\n' => escaped.push_str("<br>"),
             '\r' => {}
             _ => escaped.push(character),
@@ -290,12 +291,12 @@ mod tests {
     #[test]
     fn markdown_render_escapes_special_characters() {
         let mut report = sample_report();
-        report.repositories[0].name = "weird[repo]".to_string();
+        report.repositories[0].name = "weird[repo]|name".to_string();
         report.repositories[0].language = "Rust|Lang".to_string();
         report.repositories[0].notes = vec!["line1\nline2".to_string()];
 
         let output = render_markdown(&report);
-        assert!(output.contains("weird\\[repo\\]"));
+        assert!(output.contains("weird\\[repo\\]\\|name"));
         assert!(output.contains("Rust\\|Lang"));
         assert!(output.contains("line1<br>line2"));
     }
