@@ -6,22 +6,25 @@ use crate::report::{RepoReport, ScanReport};
 
 pub fn render_table(report: &ScanReport) -> String {
     let headers = [
-        "Repo", "Lang", "Push(d)", "Issues", "Stars", "Health", "Status", "Notes",
+        "Repo", "Branch", "Lang", "Push(d)", "Issues", "Stars", "Forks", "Health", "Status",
+        "Notes",
     ];
 
-    let mut rows: Vec<[String; 8]> = report
+    let mut rows: Vec<[String; 10]> = report
         .repositories
         .iter()
         .map(|repo| {
             [
-                repo.name.clone(),
-                repo.language.clone(),
+                sanitize_table_cell(&repo.name),
+                sanitize_table_cell(&repo.default_branch),
+                sanitize_table_cell(&repo.language),
                 repo.days_since_push.to_string(),
                 repo.open_issues.to_string(),
                 repo.stars.to_string(),
+                repo.forks.to_string(),
                 repo.health_score.to_string(),
                 repo.status.as_str().to_string(),
-                collapse_notes(repo),
+                sanitize_table_cell(&collapse_notes(repo)),
             ]
         })
         .collect();
@@ -35,14 +38,16 @@ pub fn render_table(report: &ScanReport) -> String {
             "-".to_string(),
             "-".to_string(),
             "-".to_string(),
+            "-".to_string(),
+            "-".to_string(),
             "no repositories returned".to_string(),
         ]);
     }
 
-    let mut widths: [usize; 8] = headers.map(str::len);
+    let mut widths: [usize; 10] = headers.map(str::len);
     for row in &rows {
         for (index, value) in row.iter().enumerate() {
-            widths[index] = widths[index].max(value.len());
+            widths[index] = widths[index].max(value.chars().count());
         }
     }
 
@@ -59,7 +64,7 @@ pub fn render_table(report: &ScanReport) -> String {
     );
     let _ = writeln!(
         output,
-        "Stale threshold: {} days | Generated at: {}",
+        "Stale threshold: {} days (inclusive) | Generated at: {}",
         report.summary.stale_threshold_days,
         report.summary.generated_at.to_rfc3339(),
     );
@@ -92,7 +97,7 @@ pub fn render_markdown(report: &ScanReport) -> String {
     );
     let _ = writeln!(
         output,
-        "- Average health score: `{:.1}` (threshold: `{}` days)",
+        "- Average health score: `{:.1}` (inclusive threshold: `{} days`)",
         report.summary.average_health_score, report.summary.stale_threshold_days
     );
     let _ = writeln!(
@@ -101,34 +106,41 @@ pub fn render_markdown(report: &ScanReport) -> String {
         report.summary.generated_at.to_rfc3339()
     );
     let _ = writeln!(output);
+
     let _ = writeln!(
         output,
-        "| Repo | Lang | Push(d) | Issues | Stars | Health | Status | Notes |"
+        "| Repo | Branch | Lang | Push(d) | Issues | Stars | Forks | Health | Status | Notes |"
     );
     let _ = writeln!(
         output,
-        "| --- | --- | ---: | ---: | ---: | ---: | --- | --- |"
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- | --- |"
     );
 
     if report.repositories.is_empty() {
         let _ = writeln!(
             output,
-            "| - | - | - | - | - | - | - | no repositories returned |"
+            "| - | - | - | - | - | - | - | - | - | no repositories returned |"
         );
     } else {
         for repo in &report.repositories {
+            let repo_link = format!(
+                "[{}](<{}>)",
+                markdown_escape_link_text(&repo.name),
+                markdown_escape_link_target(&repo.url)
+            );
             let _ = writeln!(
                 output,
-                "| [{}]({}) | {} | {} | {} | {} | {} | {} | {} |",
-                repo.name,
-                repo.url,
-                markdown_escape(&repo.language),
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                repo_link,
+                markdown_escape_cell(&repo.default_branch),
+                markdown_escape_cell(&repo.language),
                 repo.days_since_push,
                 repo.open_issues,
                 repo.stars,
+                repo.forks,
                 repo.health_score,
                 repo.status.as_str(),
-                markdown_escape(&collapse_notes(repo)),
+                markdown_escape_cell(&collapse_notes(repo)),
             );
         }
     }
@@ -140,30 +152,30 @@ pub fn render_json(report: &ScanReport) -> Result<String> {
     serde_json::to_string_pretty(report).map_err(Into::into)
 }
 
-fn write_row_str(output: &mut String, values: &[&str; 8], widths: &[usize; 8]) {
-    for index in 0..8 {
+fn write_row_str<const N: usize>(output: &mut String, values: &[&str; N], widths: &[usize; N]) {
+    for index in 0..N {
         let _ = write!(output, "{:<width$}", values[index], width = widths[index]);
-        if index + 1 != 8 {
+        if index + 1 != N {
             output.push_str("  ");
         }
     }
     output.push('\n');
 }
 
-fn write_row_owned(output: &mut String, values: &[String; 8], widths: &[usize; 8]) {
-    for index in 0..8 {
+fn write_row_owned<const N: usize>(output: &mut String, values: &[String; N], widths: &[usize; N]) {
+    for index in 0..N {
         let _ = write!(output, "{:<width$}", values[index], width = widths[index]);
-        if index + 1 != 8 {
+        if index + 1 != N {
             output.push_str("  ");
         }
     }
     output.push('\n');
 }
 
-fn write_separator(output: &mut String, widths: &[usize; 8]) {
+fn write_separator<const N: usize>(output: &mut String, widths: &[usize; N]) {
     for (index, width) in widths.iter().enumerate() {
         let _ = write!(output, "{}", "-".repeat(*width));
-        if index + 1 != 8 {
+        if index + 1 != N {
             output.push_str("  ");
         }
     }
@@ -174,8 +186,49 @@ fn collapse_notes(repo: &RepoReport) -> String {
     repo.notes.join(", ")
 }
 
-fn markdown_escape(value: &str) -> String {
-    value.replace('|', "\\|")
+fn sanitize_table_cell(value: &str) -> String {
+    value
+        .replace('\r', "")
+        .replace('\n', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn markdown_escape_cell(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '\\' => escaped.push_str("\\\\"),
+            '|' => escaped.push_str("\\|"),
+            '\n' => escaped.push_str("<br>"),
+            '\r' => {}
+            _ => escaped.push(character),
+        }
+    }
+    escaped
+}
+
+fn markdown_escape_link_text(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '\\' => escaped.push_str("\\\\"),
+            '[' => escaped.push_str("\\["),
+            ']' => escaped.push_str("\\]"),
+            '\n' => escaped.push_str("<br>"),
+            '\r' => {}
+            _ => escaped.push(character),
+        }
+    }
+    escaped
+}
+
+fn markdown_escape_link_target(value: &str) -> String {
+    value
+        .replace('>', "%3E")
+        .replace('<', "%3C")
+        .replace(' ', "%20")
 }
 
 #[cfg(test)]
@@ -220,6 +273,7 @@ mod tests {
         let output = render_table(&sample_report());
         assert!(output.contains("open330-repo-pulse"));
         assert!(output.contains("Org: open330"));
+        assert!(output.contains("Branch"));
     }
 
     #[test]
@@ -231,6 +285,19 @@ mod tests {
 
         let output = render_markdown(&report);
         assert!(output.contains("no repositories returned"));
+    }
+
+    #[test]
+    fn markdown_render_escapes_special_characters() {
+        let mut report = sample_report();
+        report.repositories[0].name = "weird[repo]".to_string();
+        report.repositories[0].language = "Rust|Lang".to_string();
+        report.repositories[0].notes = vec!["line1\nline2".to_string()];
+
+        let output = render_markdown(&report);
+        assert!(output.contains("weird\\[repo\\]"));
+        assert!(output.contains("Rust\\|Lang"));
+        assert!(output.contains("line1<br>line2"));
     }
 
     #[test]

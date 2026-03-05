@@ -3,6 +3,9 @@ use serde::Serialize;
 
 use crate::github::GitHubRepo;
 
+const STALE_SCORE_THRESHOLD: i32 = 50;
+const HEALTHY_SCORE_THRESHOLD: i32 = 75;
+
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum HealthStatus {
@@ -76,7 +79,7 @@ pub fn build_report(
             let last_push = repo.pushed_at.unwrap_or(repo.updated_at);
             let days_since_push = (generated_at - last_push).num_days().max(0);
             let health_score = score_repo(&repo, stale_days, days_since_push);
-            let status = classify_status(health_score, days_since_push, stale_days);
+            let status = classify_status(repo.archived, health_score, days_since_push, stale_days);
             let notes = build_notes(&repo, stale_days, days_since_push);
 
             RepoReport {
@@ -163,14 +166,23 @@ fn status_rank(status: HealthStatus) -> u8 {
     }
 }
 
-fn classify_status(score: i32, days_since_push: i64, stale_days: i64) -> HealthStatus {
-    if days_since_push > stale_days || score < 50 {
+fn classify_status(
+    archived: bool,
+    score: i32,
+    days_since_push: i64,
+    stale_days: i64,
+) -> HealthStatus {
+    if archived || is_stale_by_age(days_since_push, stale_days) || score < STALE_SCORE_THRESHOLD {
         HealthStatus::Stale
-    } else if score < 75 {
+    } else if score < HEALTHY_SCORE_THRESHOLD {
         HealthStatus::Watch
     } else {
         HealthStatus::Healthy
     }
+}
+
+fn is_stale_by_age(days_since_push: i64, stale_days: i64) -> bool {
+    days_since_push >= stale_days
 }
 
 fn score_repo(repo: &GitHubRepo, stale_days: i64, days_since_push: i64) -> i32 {
@@ -193,7 +205,12 @@ fn score_repo(repo: &GitHubRepo, stale_days: i64, days_since_push: i64) -> i32 {
         score -= 5;
     }
 
-    if days_since_push > stale_days {
+    if days_since_push > 14 && !is_stale_by_age(days_since_push, stale_days) {
+        let recent_decay = (days_since_push - 14).min(25) as i32;
+        score -= recent_decay;
+    }
+
+    if is_stale_by_age(days_since_push, stale_days) {
         let overdue_days = days_since_push - stale_days;
         let decay = 20 + ((overdue_days.min(200) as i32) / 8);
         score -= decay.min(45);
@@ -232,7 +249,11 @@ fn build_notes(repo: &GitHubRepo, stale_days: i64, days_since_push: i64) -> Vec<
         notes.push("language unknown".to_string());
     }
 
-    if days_since_push > stale_days {
+    if repo.private {
+        notes.push("private repo".to_string());
+    }
+
+    if is_stale_by_age(days_since_push, stale_days) {
         notes.push(format!("stale ({days_since_push}d since push)"));
     }
 
@@ -334,7 +355,7 @@ mod tests {
                 Some("okay"),
                 None,
                 0,
-                true,
+                false,
             ),
             repo_fixture(
                 "stale",
@@ -352,5 +373,180 @@ mod tests {
         assert_eq!(report.summary.healthy_count, 1);
         assert_eq!(report.summary.watch_count, 1);
         assert_eq!(report.summary.stale_count, 1);
+    }
+
+    #[test]
+    fn archived_repo_is_always_stale() {
+        let now = Utc.with_ymd_and_hms(2026, 3, 5, 0, 0, 0).unwrap();
+        let repo = repo_fixture(
+            "archived",
+            Utc.with_ymd_and_hms(2026, 3, 4, 0, 0, 0).unwrap(),
+            Some("historical"),
+            Some("Rust"),
+            50,
+            true,
+        );
+
+        let report = build_report("open330", vec![repo], 45, now);
+        assert_eq!(report.repositories[0].status, HealthStatus::Stale);
+    }
+
+    #[test]
+    fn stale_threshold_is_inclusive() {
+        let now = Utc.with_ymd_and_hms(2026, 3, 5, 0, 0, 0).unwrap();
+        let repo = repo_fixture(
+            "threshold",
+            Utc.with_ymd_and_hms(2026, 1, 19, 0, 0, 0).unwrap(),
+            Some("on edge"),
+            Some("Rust"),
+            0,
+            false,
+        );
+
+        let report = build_report("open330", vec![repo], 45, now);
+        assert_eq!(report.repositories[0].days_since_push, 45);
+        assert_eq!(report.repositories[0].status, HealthStatus::Stale);
+    }
+
+    #[test]
+    fn sort_health_orders_by_status_score_and_name() {
+        let mut repositories = vec![
+            RepoReport {
+                name: "zeta".to_string(),
+                description: None,
+                url: "https://example.com/zeta".to_string(),
+                language: "Rust".to_string(),
+                default_branch: "main".to_string(),
+                days_since_push: 4,
+                stars: 1,
+                forks: 0,
+                open_issues: 0,
+                archived: false,
+                private: false,
+                health_score: 80,
+                status: HealthStatus::Healthy,
+                notes: vec!["none".to_string()],
+            },
+            RepoReport {
+                name: "alpha".to_string(),
+                description: None,
+                url: "https://example.com/alpha".to_string(),
+                language: "Rust".to_string(),
+                default_branch: "main".to_string(),
+                days_since_push: 50,
+                stars: 0,
+                forks: 0,
+                open_issues: 2,
+                archived: false,
+                private: false,
+                health_score: 40,
+                status: HealthStatus::Stale,
+                notes: vec!["stale".to_string()],
+            },
+            RepoReport {
+                name: "beta".to_string(),
+                description: None,
+                url: "https://example.com/beta".to_string(),
+                language: "Rust".to_string(),
+                default_branch: "main".to_string(),
+                days_since_push: 20,
+                stars: 0,
+                forks: 0,
+                open_issues: 1,
+                archived: false,
+                private: false,
+                health_score: 70,
+                status: HealthStatus::Watch,
+                notes: vec!["none".to_string()],
+            },
+        ];
+
+        sort_repositories(&mut repositories, SortMode::Health);
+        let order: Vec<String> = repositories.into_iter().map(|entry| entry.name).collect();
+        assert_eq!(order, vec!["alpha", "beta", "zeta"]);
+    }
+
+    #[test]
+    fn sort_updated_orders_most_recent_first() {
+        let mut repositories = vec![
+            RepoReport {
+                name: "older".to_string(),
+                description: None,
+                url: "https://example.com/older".to_string(),
+                language: "Rust".to_string(),
+                default_branch: "main".to_string(),
+                days_since_push: 10,
+                stars: 0,
+                forks: 0,
+                open_issues: 0,
+                archived: false,
+                private: false,
+                health_score: 80,
+                status: HealthStatus::Healthy,
+                notes: vec!["none".to_string()],
+            },
+            RepoReport {
+                name: "newer".to_string(),
+                description: None,
+                url: "https://example.com/newer".to_string(),
+                language: "Rust".to_string(),
+                default_branch: "main".to_string(),
+                days_since_push: 2,
+                stars: 0,
+                forks: 0,
+                open_issues: 0,
+                archived: false,
+                private: false,
+                health_score: 80,
+                status: HealthStatus::Healthy,
+                notes: vec!["none".to_string()],
+            },
+        ];
+
+        sort_repositories(&mut repositories, SortMode::Updated);
+        let order: Vec<String> = repositories.into_iter().map(|entry| entry.name).collect();
+        assert_eq!(order, vec!["newer", "older"]);
+    }
+
+    #[test]
+    fn sort_name_is_alphabetical() {
+        let mut repositories = vec![
+            RepoReport {
+                name: "delta".to_string(),
+                description: None,
+                url: "https://example.com/delta".to_string(),
+                language: "Rust".to_string(),
+                default_branch: "main".to_string(),
+                days_since_push: 1,
+                stars: 0,
+                forks: 0,
+                open_issues: 0,
+                archived: false,
+                private: false,
+                health_score: 90,
+                status: HealthStatus::Healthy,
+                notes: vec!["none".to_string()],
+            },
+            RepoReport {
+                name: "alpha".to_string(),
+                description: None,
+                url: "https://example.com/alpha".to_string(),
+                language: "Rust".to_string(),
+                default_branch: "main".to_string(),
+                days_since_push: 3,
+                stars: 0,
+                forks: 0,
+                open_issues: 0,
+                archived: false,
+                private: false,
+                health_score: 90,
+                status: HealthStatus::Healthy,
+                notes: vec!["none".to_string()],
+            },
+        ];
+
+        sort_repositories(&mut repositories, SortMode::Name);
+        let order: Vec<String> = repositories.into_iter().map(|entry| entry.name).collect();
+        assert_eq!(order, vec!["alpha", "delta"]);
     }
 }

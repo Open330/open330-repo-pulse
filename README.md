@@ -38,7 +38,7 @@ add output integrations, or tune risk heuristics for large organizations.
 
 ## Features
 
-**Organization Scan** -- Pull repositories from any GitHub organization through the REST API with optional private repository support via `GITHUB_TOKEN`.
+**Organization Scan** -- Pull repositories from any GitHub organization through the REST API with optional private repository support via `--include-private` + `GITHUB_TOKEN`.
 
 **Risk Scoring** -- Calculate health scores (`0-100`) using activity recency, repository metadata quality, archive status, and engagement signal.
 
@@ -48,7 +48,7 @@ add output integrations, or tune risk heuristics for large organizations.
 
 **Deterministic Sorting** -- Sort by health, update recency, or repository name depending on the workflow.
 
-**Safe Defaults** -- Defaults tuned for org-level triage: `--org open330`, `--max-repos 100`, `--stale-days 45`.
+**Safe Defaults** -- Defaults tuned for org-level triage: `--org open330`, `--max-repos 100`, `--stale-days 45` (inclusive stale boundary).
 
 ## Supported Formats
 
@@ -65,6 +65,17 @@ add output integrations, or tune risk heuristics for large organizations.
 | `health` | Prioritize at-risk repositories first |
 | `updated` | Show most recently pushed repositories first |
 | `name` | Stable alphabetical ordering |
+
+## CLI Options
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--org` | `open330` | Target GitHub organization |
+| `--max-repos` | `100` | Maximum repositories to fetch |
+| `--stale-days` | `45` | Inclusive stale threshold in days (`>=` is stale) |
+| `--format` | `table` | Output format: `table`, `markdown`, `json` |
+| `--sort` | `health` | Sort mode: `health`, `updated`, `name` |
+| `--include-private` | `false` | Include private repositories (requires non-empty `GITHUB_TOKEN`) |
 
 ## Export Presets
 
@@ -122,6 +133,10 @@ cargo run --
 
 # Scan another org and emit markdown report
 cargo run -- --org rust-lang --max-repos 80 --stale-days 60 --format markdown --sort updated
+
+# Include private repositories (requires token scope)
+export GITHUB_TOKEN=ghp_your_token
+cargo run -- --org Open330 --include-private --format table
 ```
 
 ### Run Tests
@@ -152,7 +167,7 @@ No server deployment is required. For team distribution:
 2. Publish source to GitHub
 3. Optionally install locally with `cargo install --path .`
 
-Environment note: `GITHUB_TOKEN` is optional, but recommended for higher rate limits and private repo visibility when permission is granted.
+Environment note: `GITHUB_TOKEN` is optional for public scans, and mandatory when `--include-private` is used.
 
 ## Acknowledgements
 
