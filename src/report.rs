@@ -278,6 +278,10 @@ mod tests {
         archived: bool,
     ) -> GitHubRepo {
         GitHubRepo {
+            id: name
+                .as_bytes()
+                .iter()
+                .fold(0u64, |acc, value| acc + u64::from(*value)),
             name: name.to_string(),
             description: description.map(ToString::to_string),
             html_url: format!("https://github.com/Open330/{name}"),
