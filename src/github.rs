@@ -3,6 +3,7 @@ use chrono::{DateTime, Utc};
 use reqwest::blocking::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 use serde::Deserialize;
+use std::time::Duration;
 
 const GITHUB_API_BASE: &str = "https://api.github.com";
 const APP_USER_AGENT: &str = "open330-repo-pulse";
@@ -33,6 +34,8 @@ pub fn fetch_org_repos(
     }
 
     let client = Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(30))
         .build()
         .context("failed to build HTTP client")?;
     let token = std::env::var("GITHUB_TOKEN").ok();
@@ -86,12 +89,8 @@ pub fn fetch_org_repos(
         let received_count = page_repos.len();
         repos.append(&mut page_repos);
 
-        if repos.len() >= max_repos {
+        if !should_continue_pagination(received_count, repos.len(), max_repos, per_page) {
             repos.truncate(max_repos);
-            break;
-        }
-
-        if received_count < per_page {
             break;
         }
 
@@ -99,4 +98,37 @@ pub fn fetch_org_repos(
     }
 
     Ok(repos)
+}
+
+fn should_continue_pagination(
+    received_count: usize,
+    accumulated_count: usize,
+    max_repos: usize,
+    per_page: usize,
+) -> bool {
+    if accumulated_count >= max_repos {
+        return false;
+    }
+
+    received_count >= per_page
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_continue_pagination;
+
+    #[test]
+    fn pagination_stops_at_limit() {
+        assert!(!should_continue_pagination(100, 100, 100, 100));
+    }
+
+    #[test]
+    fn pagination_stops_when_last_page_is_partial() {
+        assert!(!should_continue_pagination(17, 17, 100, 100));
+    }
+
+    #[test]
+    fn pagination_continues_when_page_is_full_and_under_limit() {
+        assert!(should_continue_pagination(100, 100, 250, 100));
+    }
 }

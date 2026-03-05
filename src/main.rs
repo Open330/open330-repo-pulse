@@ -54,6 +54,12 @@ fn main() -> Result<()> {
     if cli.stale_days < 1 {
         bail!("--stale-days must be at least 1");
     }
+    if cli.include_private {
+        let token = std::env::var("GITHUB_TOKEN").unwrap_or_default();
+        if token.trim().is_empty() {
+            bail!("--include-private requires a non-empty GITHUB_TOKEN environment variable");
+        }
+    }
 
     let repositories = fetch_org_repos(&cli.org, cli.max_repos, cli.include_private)?;
     let mut report = build_report(&cli.org, repositories, cli.stale_days, Utc::now());

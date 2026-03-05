@@ -110,20 +110,27 @@ pub fn render_markdown(report: &ScanReport) -> String {
         "| --- | --- | ---: | ---: | ---: | ---: | --- | --- |"
     );
 
-    for repo in &report.repositories {
+    if report.repositories.is_empty() {
         let _ = writeln!(
             output,
-            "| [{}]({}) | {} | {} | {} | {} | {} | {} | {} |",
-            repo.name,
-            repo.url,
-            markdown_escape(&repo.language),
-            repo.days_since_push,
-            repo.open_issues,
-            repo.stars,
-            repo.health_score,
-            repo.status.as_str(),
-            markdown_escape(&collapse_notes(repo)),
+            "| - | - | - | - | - | - | - | no repositories returned |"
         );
+    } else {
+        for repo in &report.repositories {
+            let _ = writeln!(
+                output,
+                "| [{}]({}) | {} | {} | {} | {} | {} | {} | {} |",
+                repo.name,
+                repo.url,
+                markdown_escape(&repo.language),
+                repo.days_since_push,
+                repo.open_issues,
+                repo.stars,
+                repo.health_score,
+                repo.status.as_str(),
+                markdown_escape(&collapse_notes(repo)),
+            );
+        }
     }
 
     output
@@ -169,4 +176,67 @@ fn collapse_notes(repo: &RepoReport) -> String {
 
 fn markdown_escape(value: &str) -> String {
     value.replace('|', "\\|")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{render_json, render_markdown, render_table};
+    use crate::report::{HealthStatus, RepoReport, ScanReport, ScanSummary};
+    use chrono::{TimeZone, Utc};
+
+    fn sample_report() -> ScanReport {
+        ScanReport {
+            summary: ScanSummary {
+                organization: "open330".to_string(),
+                scanned_repositories: 1,
+                stale_threshold_days: 45,
+                generated_at: Utc.with_ymd_and_hms(2026, 3, 5, 0, 0, 0).unwrap(),
+                healthy_count: 0,
+                watch_count: 1,
+                stale_count: 0,
+                average_health_score: 71.0,
+            },
+            repositories: vec![RepoReport {
+                name: "open330-repo-pulse".to_string(),
+                description: Some("Repo scanner".to_string()),
+                url: "https://github.com/Open330/open330-repo-pulse".to_string(),
+                language: "Rust".to_string(),
+                default_branch: "main".to_string(),
+                days_since_push: 12,
+                stars: 3,
+                forks: 1,
+                open_issues: 0,
+                archived: false,
+                private: false,
+                health_score: 71,
+                status: HealthStatus::Watch,
+                notes: vec!["missing description".to_string()],
+            }],
+        }
+    }
+
+    #[test]
+    fn table_render_contains_repo_name() {
+        let output = render_table(&sample_report());
+        assert!(output.contains("open330-repo-pulse"));
+        assert!(output.contains("Org: open330"));
+    }
+
+    #[test]
+    fn markdown_render_has_empty_state_row() {
+        let mut report = sample_report();
+        report.repositories.clear();
+        report.summary.scanned_repositories = 0;
+        report.summary.watch_count = 0;
+
+        let output = render_markdown(&report);
+        assert!(output.contains("no repositories returned"));
+    }
+
+    #[test]
+    fn json_render_contains_summary() {
+        let output = render_json(&sample_report()).expect("json output should render");
+        assert!(output.contains("\"organization\": \"open330\""));
+        assert!(output.contains("\"repositories\""));
+    }
 }
