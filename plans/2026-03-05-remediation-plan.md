@@ -27,9 +27,17 @@ This plan consolidates action items from the latest parallel reviews (explore, l
 - [x] Escape `|` in markdown link text to prevent table-cell breakage.
 - [x] Clarify default-branch/private/archive output context in README features.
 
+## Critical Review Follow-up (Analyze Pass)
+
+- [x] Prevent credential forwarding to untrusted pagination hosts by enforcing trusted API origin checks.
+- [x] Switch to stable `full_name` pagination ordering and deduplicate repositories by immutable GitHub `id`.
+- [x] Align secondary-rate-limit fallback with GitHub guidance (`>=60s` wait when headers are missing but rate-limit signal exists).
+- [x] Add integration-style fetch tests for pagination, dedupe, private-scan auth/query semantics, and untrusted next-link rejection.
+
 ## Progress Log
 
 - [x] 2026-03-05: Consolidated review findings into a tracked remediation plan.
 - [x] 2026-03-05: Implemented API reliability hardening (version header, retry/backoff, Link pagination, safer error handling) and validation alignment between CLI/library.
 - [x] 2026-03-05: Completed scoring/output/docs hardening (archived stale policy, inclusive threshold semantics, richer output fields, markdown safety, and expanded tests).
 - [x] 2026-03-05: Closed follow-up gaps from exhaustive search (Retry-After HTTP-date parsing, strict 403 retry conditions, library org validation, tie-break tests, and README clarity).
+- [x] 2026-03-05: Closed critical review issues from analyze pass (trusted pagination origin, stable ordering + id dedupe, improved secondary-limit fallback, and fetch-flow integration tests).
