@@ -46,6 +46,7 @@ pub struct RepoReport {
 pub struct ScanSummary {
     pub organization: String,
     pub scanned_repositories: usize,
+    pub displayed_repositories: usize,
     pub stale_threshold_days: i64,
     pub generated_at: DateTime<Utc>,
     pub healthy_count: usize,
@@ -125,6 +126,7 @@ pub fn build_report(
         summary: ScanSummary {
             organization: organization.to_string(),
             scanned_repositories: repositories.len(),
+            displayed_repositories: repositories.len(),
             stale_threshold_days: stale_days,
             generated_at,
             healthy_count,
@@ -156,6 +158,30 @@ pub fn sort_repositories(repositories: &mut [RepoReport], mode: SortMode) {
         }
         SortMode::Name => repositories.sort_by(|left, right| left.name.cmp(&right.name)),
     }
+}
+
+pub fn filter_report(
+    report: &mut ScanReport,
+    status_filter: Option<HealthStatus>,
+    max_results: Option<usize>,
+) {
+    if let Some(status_filter) = status_filter {
+        report
+            .repositories
+            .retain(|entry| entry.status == status_filter);
+    }
+
+    if let Some(max_results) = max_results
+        && report.repositories.len() > max_results
+    {
+        report.repositories.truncate(max_results);
+    }
+
+    refresh_display_count(report);
+}
+
+pub fn refresh_display_count(report: &mut ScanReport) {
+    report.summary.displayed_repositories = report.repositories.len();
 }
 
 fn status_rank(status: HealthStatus) -> u8 {
@@ -374,6 +400,7 @@ mod tests {
         let report = build_report("open330", repositories, 45, now);
 
         assert_eq!(report.summary.scanned_repositories, 3);
+        assert_eq!(report.summary.displayed_repositories, 3);
         assert_eq!(report.summary.healthy_count, 1);
         assert_eq!(report.summary.watch_count, 1);
         assert_eq!(report.summary.stale_count, 1);
@@ -610,5 +637,89 @@ mod tests {
         sort_repositories(&mut repositories, SortMode::Name);
         let order: Vec<String> = repositories.into_iter().map(|entry| entry.name).collect();
         assert_eq!(order, vec!["alpha", "delta"]);
+    }
+
+    #[test]
+    fn filter_report_by_status_updates_display_count_only() {
+        let now = Utc.with_ymd_and_hms(2026, 3, 5, 0, 0, 0).unwrap();
+        let repositories = vec![
+            repo_fixture(
+                "healthy",
+                Utc.with_ymd_and_hms(2026, 3, 4, 0, 0, 0).unwrap(),
+                Some("good"),
+                Some("Rust"),
+                10,
+                false,
+            ),
+            repo_fixture(
+                "watch",
+                Utc.with_ymd_and_hms(2026, 2, 15, 0, 0, 0).unwrap(),
+                Some("warning"),
+                Some("Rust"),
+                0,
+                false,
+            ),
+            repo_fixture(
+                "stale",
+                Utc.with_ymd_and_hms(2025, 8, 10, 0, 0, 0).unwrap(),
+                None,
+                None,
+                0,
+                false,
+            ),
+        ];
+
+        let mut report = build_report("open330", repositories, 45, now);
+        let before_counts = (
+            report.summary.healthy_count,
+            report.summary.watch_count,
+            report.summary.stale_count,
+        );
+        filter_report(&mut report, Some(HealthStatus::Stale), None);
+
+        assert_eq!(report.summary.scanned_repositories, 3);
+        assert_eq!(report.summary.displayed_repositories, 1);
+        assert_eq!(report.summary.healthy_count, before_counts.0);
+        assert_eq!(report.summary.watch_count, before_counts.1);
+        assert_eq!(report.summary.stale_count, before_counts.2);
+    }
+
+    #[test]
+    fn filter_report_applies_max_results_limit() {
+        let now = Utc.with_ymd_and_hms(2026, 3, 5, 0, 0, 0).unwrap();
+        let repositories = vec![
+            repo_fixture(
+                "one",
+                Utc.with_ymd_and_hms(2026, 3, 4, 0, 0, 0).unwrap(),
+                Some("a"),
+                Some("Rust"),
+                5,
+                false,
+            ),
+            repo_fixture(
+                "two",
+                Utc.with_ymd_and_hms(2026, 3, 3, 0, 0, 0).unwrap(),
+                Some("b"),
+                Some("Rust"),
+                5,
+                false,
+            ),
+            repo_fixture(
+                "three",
+                Utc.with_ymd_and_hms(2026, 3, 2, 0, 0, 0).unwrap(),
+                Some("c"),
+                Some("Rust"),
+                5,
+                false,
+            ),
+        ];
+
+        let mut report = build_report("open330", repositories, 45, now);
+        sort_repositories(&mut report.repositories, SortMode::Updated);
+        filter_report(&mut report, None, Some(2));
+
+        assert_eq!(report.summary.scanned_repositories, 3);
+        assert_eq!(report.summary.displayed_repositories, 2);
+        assert_eq!(report.repositories.len(), 2);
     }
 }

@@ -46,6 +46,12 @@ add output integrations, or tune risk heuristics for large organizations.
 
 **Multi-Format Output** -- Render reports as readable terminal tables, Markdown for issues/docs, or JSON for automation pipelines.
 
+**Display Filters** -- Focus triage output with `--status` and `--max-results` while keeping scan-level summary context.
+
+**CI Quality Gates** -- Use `--fail-on watch|stale` to make automation fail fast when at-risk repositories are detected.
+
+**Report Export** -- Save rendered output directly to a file using `--output-file` for artifact pipelines.
+
 **Richer Context Columns** -- Include default branch and fork count in tabular output, while `notes` flags key context such as archived/private repositories and metadata gaps.
 
 **Deterministic Sorting** -- Sort by health, update recency, or repository name depending on the workflow.
@@ -78,6 +84,10 @@ add output integrations, or tune risk heuristics for large organizations.
 | `--format` | `table` | Output format: `table`, `markdown`, `json` |
 | `--sort` | `health` | Sort mode: `health`, `updated`, `name` |
 | `--include-private` | `false` | Include private repositories (requires non-empty `GITHUB_TOKEN`) |
+| `--status` | _(none)_ | Filter displayed repositories by `healthy`, `watch`, or `stale` |
+| `--max-results` | _(none)_ | Limit displayed repository rows |
+| `--output-file` | _(none)_ | Write rendered report output to a file path |
+| `--fail-on` | `none` | Exit non-zero when `watch`/`stale` conditions are met (`none`, `watch`, `stale`) |
 
 ## Export Presets
 
@@ -87,6 +97,9 @@ add output integrations, or tune risk heuristics for large organizations.
 | Weekly markdown report | `cargo run -- --format markdown --sort health` |
 | Automation JSON feed | `cargo run -- --format json --sort updated` |
 | Multi-org scan | `cargo run -- --org rust-lang --max-repos 80 --stale-days 60` |
+| Stale-only top 20 triage | `cargo run -- --status stale --max-results 20 --sort health` |
+| CI quality gate (fail on watch/stale) | `cargo run -- --format json --fail-on watch` |
+| Persist report artifact | `cargo run -- --format markdown --output-file ./repo-pulse.md` |
 
 ## Keyboard Shortcuts
 
@@ -139,6 +152,12 @@ cargo run -- --org rust-lang --max-repos 80 --stale-days 60 --format markdown --
 # Include private repositories (requires token scope)
 export GITHUB_TOKEN=ghp_your_token
 cargo run -- --org Open330 --include-private --format table
+
+# Show only stale repositories and fail CI if any stale repos exist
+cargo run -- --status stale --max-results 25 --fail-on stale
+
+# Write output to a markdown artifact file
+cargo run -- --format markdown --output-file ./artifacts/repo-pulse.md
 ```
 
 ### Run Tests

@@ -54,9 +54,10 @@ pub fn render_table(report: &ScanReport) -> String {
     let mut output = String::new();
     let _ = writeln!(
         output,
-        "Org: {} | Scanned: {} | Healthy: {} | Watch: {} | Stale: {} | Avg score: {:.1}",
+        "Org: {} | Scanned: {} | Displayed: {} | Healthy(scan): {} | Watch(scan): {} | Stale(scan): {} | Avg score(scan): {:.1}",
         report.summary.organization,
         report.summary.scanned_repositories,
+        report.summary.displayed_repositories,
         report.summary.healthy_count,
         report.summary.watch_count,
         report.summary.stale_count,
@@ -92,7 +93,12 @@ pub fn render_markdown(report: &ScanReport) -> String {
     );
     let _ = writeln!(
         output,
-        "- Health buckets: `healthy={}` `watch={}` `stale={}`",
+        "- Displayed repositories: `{}`",
+        report.summary.displayed_repositories
+    );
+    let _ = writeln!(
+        output,
+        "- Health buckets (scan-level): `healthy={}` `watch={}` `stale={}`",
         report.summary.healthy_count, report.summary.watch_count, report.summary.stale_count
     );
     let _ = writeln!(
@@ -243,6 +249,7 @@ mod tests {
             summary: ScanSummary {
                 organization: "open330".to_string(),
                 scanned_repositories: 1,
+                displayed_repositories: 1,
                 stale_threshold_days: 45,
                 generated_at: Utc.with_ymd_and_hms(2026, 3, 5, 0, 0, 0).unwrap(),
                 healthy_count: 0,
